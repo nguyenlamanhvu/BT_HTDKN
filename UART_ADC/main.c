@@ -5,7 +5,7 @@
 
 #define BUFFER_SIZE 10
 int16_t data;
-char DataBuffer[BUFFER_SIZE];
+char TxBuffer[BUFFER_SIZE];
 
 void init_main(void);
 void IntToASCII(int n, char *string);
@@ -15,19 +15,14 @@ int main(void)
 	SysTick_Config(SystemCoreClock/100);
 
 	init_main();
-	data = 12345;
+	data = 1234;
 	while(1){
 		if(tick_count == 100){
 			tick_count = 0;		
-			IntToASCII(data,DataBuffer);
-			int8_t index = strlen(DataBuffer);
-			while(index >= 0){
-				while (USART_GetFlagStatus(USART2, USART_FLAG_TXE) == RESET);
-				USART_SendData(USART2, (uint8_t)DataBuffer[--index]);
-			}
-//			USART_SendData(USART2,(uint8_t)65);		
-//			while (USART_GetFlagStatus(USART2, USART_FLAG_TXE) == RESET);
-//			USART_SendData(USART2,(uint8_t)66);
+			IntToASCII(data,TxBuffer);
+			DMA_ClearFlag(DMA1_Stream6, DMA_FLAG_TCIF6);
+			DMA1_Stream6->NDTR = strlen(TxBuffer);
+			DMA_Cmd(DMA1_Stream6, ENABLE);
 		}		 
 	}
 }
@@ -35,12 +30,15 @@ int main(void)
 void init_main(void)
 {
   GPIO_InitTypeDef 	GPIO_InitStructure; 
-	USART_InitTypeDef USART_InitStructure;   
+	USART_InitTypeDef USART_InitStructure; 
+	DMA_InitTypeDef  	DMA_InitStructure;  
    
   /* Enable GPIO clock */
   RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOA, ENABLE);
   /* Enable UART clock */
   RCC_APB1PeriphClockCmd(RCC_APB1Periph_USART2, ENABLE);
+	/* Enable DMA1 clock */
+  RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_DMA1, ENABLE);
 
   /* Connect USART2 pins to AF7 */  
   GPIO_PinAFConfig(GPIOA, GPIO_PinSource2, GPIO_AF_USART2);
@@ -78,6 +76,28 @@ void init_main(void)
 
   /* Enable USART */
   USART_Cmd(USART2, ENABLE);
+	
+	/* Enable UART4 DMA */
+  USART_DMACmd(USART2, USART_DMAReq_Tx, ENABLE); 
+	
+	/* DMA1 Stream6 Channel4 for USART2 Tx configuration */			
+  DMA_InitStructure.DMA_Channel = DMA_Channel_4;  
+  DMA_InitStructure.DMA_PeripheralBaseAddr = (uint32_t)&USART2->DR;
+  DMA_InitStructure.DMA_Memory0BaseAddr = (uint32_t)TxBuffer;
+  DMA_InitStructure.DMA_DIR = DMA_DIR_MemoryToPeripheral;
+  DMA_InitStructure.DMA_BufferSize = BUFFER_SIZE;
+  DMA_InitStructure.DMA_PeripheralInc = DMA_PeripheralInc_Disable;
+  DMA_InitStructure.DMA_MemoryInc = DMA_MemoryInc_Enable;
+  DMA_InitStructure.DMA_PeripheralDataSize = DMA_PeripheralDataSize_Byte;
+  DMA_InitStructure.DMA_MemoryDataSize = DMA_MemoryDataSize_Byte;
+  DMA_InitStructure.DMA_Mode = DMA_Mode_Normal;
+  DMA_InitStructure.DMA_Priority = DMA_Priority_High;
+  DMA_InitStructure.DMA_FIFOMode = DMA_FIFOMode_Disable;         
+  DMA_InitStructure.DMA_FIFOThreshold = DMA_FIFOThreshold_HalfFull;
+  DMA_InitStructure.DMA_MemoryBurst = DMA_MemoryBurst_Single;
+  DMA_InitStructure.DMA_PeripheralBurst = DMA_PeripheralBurst_Single;
+  DMA_Init(DMA1_Stream6, &DMA_InitStructure);
+  DMA_Cmd(DMA1_Stream6, ENABLE);
 }
 
 void IntToASCII(int n, char *string)
@@ -89,5 +109,10 @@ void IntToASCII(int n, char *string)
 	}
 	while(index < BUFFER_SIZE){
 		string[index++] = 0;
+	}
+	for(index = 0; index < strlen(string)/2; index++){
+		char tmp = string[index];
+		string[index] = string[strlen(string) - index -1];
+		string[strlen(string) - index -1] = tmp;
 	}
 }
